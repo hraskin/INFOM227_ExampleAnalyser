@@ -179,6 +179,46 @@ class Interpreter extends AnyFunSuite {
       }
       """,
       8
+    ),
+    (
+      "execute array sum",
+      """
+      function main() {
+          a = {1, 2, 3};
+          i = 0;
+          total = 0;
+
+          while (i < 3) {
+              total = total + a[i];
+              i = i + 1;
+          }
+          return total;
+      }
+      """,
+      6
+    ),
+    (
+      "execute expression with array access",
+      """
+      function main() {
+          a = {1, 2, 3};
+          b = a[0] + a[1];
+          b = b + a[2];
+          return b;
+      }
+      """,
+      6
+    ),
+    (
+      "execute array assignment and access",
+      """
+      function main() {
+          a = {1, 2, 3};
+          a[1] = 5;
+          return a[1];
+      }
+      """,
+      5
     )
   ).foreach { (name, code, expected) =>
     test(name) {
