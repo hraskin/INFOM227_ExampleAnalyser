@@ -1,7 +1,6 @@
 package be.unamur.info.infom227.small.ast
 
 // Operators
-
 enum EqualComparisonOperator {
   case Eq
   case Ne
@@ -44,16 +43,13 @@ enum BooleanBinaryOperator {
 }
 
 // Expressions
-
 sealed trait Expression
-
 
 sealed trait ArithmeticExpression extends Expression
 
 case class ArithmeticConstant(value: Int) extends ArithmeticExpression
 
 case class ArithmeticBinaryOperation(left: ArithmeticOperand, operator: ArithmeticBinaryOperator, right: ArithmeticOperand) extends ArithmeticExpression
-
 
 sealed trait BooleanExpression extends Expression {
   def negate: BooleanExpression
@@ -68,7 +64,6 @@ case class BooleanNegOperation(value: BooleanOperand) extends BooleanExpression 
 }
 
 case class BooleanBinaryOperation(left: BooleanOperand, operator: BooleanBinaryOperator | EqualComparisonOperator, right: BooleanOperand) extends BooleanExpression {
-
   override def negate: BooleanExpression = operator match
     case booleanBinaryOperator: BooleanBinaryOperator => BooleanBinaryOperation(negateBooleanOperand(left), booleanBinaryOperator.negate, negateBooleanOperand(right))
     case equalComparisonOperator: EqualComparisonOperator => BooleanBinaryOperation(left, equalComparisonOperator.negate, right)
@@ -81,33 +76,39 @@ case class IntegerComparisonOperation(left: ArithmeticOperand, operator: Integer
   }
 }
 
-
 case class Variable(name: String) extends ArithmeticExpression, BooleanExpression {
   override def negate: BooleanNegOperation = BooleanNegOperation(Variable(name))
 }
 
+type ArithmeticOperand = ArithmeticConstant | Variable | ArrayAccess
 
-type ArithmeticOperand = ArithmeticConstant | Variable
-
-type BooleanOperand = BooleanConstant | BooleanNegOperation | Variable
+type BooleanOperand = BooleanConstant | BooleanNegOperation | Variable | ArrayAccess
 
 def negateBooleanOperand(operand: BooleanOperand): BooleanOperand = operand match {
   case booleanConstant: BooleanConstant => booleanConstant.negate
   case booleanNegOperation: BooleanNegOperation => booleanNegOperation.negate
   case variable: Variable => variable.negate
+  case arrayAccess: ArrayAccess => arrayAccess.negate
 }
 
-// Call
+// Array
+case class ArrayAccess(variable: Variable, index: ArithmeticExpression) extends ArithmeticExpression, BooleanExpression {
+  override def negate: BooleanNegOperation = BooleanNegOperation(ArrayAccess(variable, index))
+}
 
+case class ArrayLit(elems: List[Expression])
+
+// Call
 case class FunctionCall(name: String, arguments: List[Expression])
 
 // Statements
-
 sealed trait Statement {
   def lineNumber: Int
 }
 
-case class AssignStatement(lineNumber: Int, variable: String, expression: Expression | FunctionCall) extends Statement
+case class AssignStatement(lineNumber: Int, variable: String, expression: Expression | FunctionCall | ArrayLit) extends Statement
+
+case class ArrayAssignStatement(lineNumber: Int, variable: String, index: ArithmeticExpression, expression: Expression | FunctionCall) extends Statement
 
 case class IfStatement(lineNumber: Int, condition: BooleanExpression, ifBody: List[Statement], elseBody: List[Statement]) extends Statement
 
@@ -116,7 +117,6 @@ case class WhileStatement(lineNumber: Int, condition: BooleanExpression, body: L
 case class ReturnStatement(lineNumber: Int, expression: Expression) extends Statement
 
 // Program
-
 case class Function(lineNumber: Int, parameters: List[String], body: List[Statement])
 
 case class Program(functions: Map[String, Function])
