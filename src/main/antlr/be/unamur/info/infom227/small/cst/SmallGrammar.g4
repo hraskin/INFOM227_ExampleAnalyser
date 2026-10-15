@@ -5,7 +5,6 @@ grammar SmallGrammar;
  */
 
 // Keywords
-
 IF: 'if';
 
 ELSE: 'else';
@@ -17,7 +16,6 @@ FUNCTION: 'function';
 RETURN: 'return';
 
 // Separators / Punctuators
-
 LBRACE: '{';
 
 RBRACE: '}';
@@ -30,8 +28,11 @@ COMMA: ',';
 
 SEMICOLON: ';';
 
-// Operators
+LBRACKET: '[';
 
+RBRACKET: ']';
+
+// Operators
 ASSIGN: '=';
 
 AND: 'and';
@@ -59,7 +60,6 @@ EQUAL: '==';
 NOT_EQUAL: '!=';
 
 // Literals
-
 TRUE: 'True';
 
 FALSE: 'False';
@@ -69,17 +69,14 @@ fragment DIGIT: [0-9];
 NUM: DIGIT+;
 
 // Identifiers
-
 fragment LETTER: [a-zA-Z];
 
 IDENTIFIER: LETTER (LETTER | DIGIT)*;
 
 // Comments -> ignored
-
 COMMENT: ('/*' (.*?) '*/' | '//' .*? '\r'? ('\n' | EOF)) -> skip;
 
 // Whitespaces -> ignored
-
 NEWLINE: '\r'? '\n' -> skip;
 
 WS: [ \t]+ -> skip;
@@ -89,7 +86,6 @@ WS: [ \t]+ -> skip;
  */
 
 // Program
-
 program: function*;
 
 function: FUNCTION IDENTIFIER LPAR parameters RPAR body;
@@ -97,12 +93,14 @@ function: FUNCTION IDENTIFIER LPAR parameters RPAR body;
 parameters: (IDENTIFIER (COMMA IDENTIFIER)*)?;
 
 // Statements
-
 body: LBRACE stmt* RBRACE;
 
-stmt: assignStmt | ifStmt | whileStmt | returnStmt;
+stmt: assignStmt | arrayAssignStmt | ifStmt | whileStmt | returnStmt;
 
-assignStmt: IDENTIFIER ASSIGN (expr | funcCall) SEMICOLON;
+// arrayList uniquement à l'assignation
+assignStmt: IDENTIFIER ASSIGN (expr | funcCall | arrayLit) SEMICOLON;
+
+arrayAssignStmt: IDENTIFIER (LBRACKET arithExpr RBRACKET)? ASSIGN (expr | funcCall) SEMICOLON;
 
 ifStmt: IF LPAR boolExpr RPAR ifBody = body ELSE elseBody = body;
 
@@ -111,13 +109,11 @@ whileStmt: WHILE LPAR boolExpr RPAR body;
 returnStmt: RETURN expr SEMICOLON;
 
 // Call
-
 funcCall: IDENTIFIER LPAR arguments RPAR;
 
 arguments: (expr (COMMA expr)*)?;
 
 // Expressions
-
 expr: arithExpr | boolExpr;
 
 arithExpr: noprnd | binArithOp;
@@ -130,12 +126,16 @@ binLogicOp: left = noprnd logicOp right = noprnd;
 
 relOp: left = boprnd nop right = boprnd;
 
-noprnd: IDENTIFIER | NUM;
+noprnd: IDENTIFIER | NUM | arrayAccess;
 
-boprnd: IDENTIFIER | TRUE | FALSE;
+boprnd: IDENTIFIER | TRUE | FALSE | arrayAccess;
+
+// Array
+arrayAccess: IDENTIFIER LBRACKET arithExpr  RBRACKET;
+
+arrayLit: LBRACE (expr (COMMA expr)*)? RBRACE;
 
 // Operators
-
 arithOp: ADD | SUBSTRACT | MULTIPLY | DIVIDE;
 
 logicOp:

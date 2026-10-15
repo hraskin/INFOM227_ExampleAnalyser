@@ -288,6 +288,129 @@ class TestAstBuilder extends AnyFunSuite {
       )
     ),
     (
+      "build AST with array assignments",
+      """
+      function main() {
+          a = {1, 2, 3};
+          return a[1];
+      }
+      """,
+      Program(
+        Map(
+          "main" -> Function(
+            2,
+            List.empty,
+            List(
+              AssignStatement(
+                3,
+                "a",
+                ArrayLit(List(ArithmeticConstant(1), ArithmeticConstant(2), ArithmeticConstant(3)))
+              ),
+              ReturnStatement(
+                4,
+                ArrayAccess(Variable("a"), ArithmeticConstant(1))
+              )
+            )
+          )
+        )
+      )
+    ),
+    (
+      "build AST with array access and assignment",
+      """
+      function main() {
+          a = {1, 2, 3};
+          a[1] = 5;
+          return a[1];
+      }
+      """,
+      Program(
+        Map(
+          "main" -> Function(
+            2,
+            List.empty,
+            List(
+              AssignStatement(
+                3,
+                "a",
+                ArrayLit(List(ArithmeticConstant(1), ArithmeticConstant(2), ArithmeticConstant(3)))
+              ),
+              ArrayAssignStatement(
+                4,
+                "a",
+                ArithmeticConstant(1),
+                ArithmeticConstant(5)
+              ),
+              ReturnStatement(
+                5,
+                ArrayAccess(Variable("a"), ArithmeticConstant(1))
+              )
+            )
+          )
+        )
+      )
+    ),
+    (
+      "build AST with empty array",
+      """
+      function main() {
+          a = {};
+          return 0;
+      }
+      """,
+      Program(
+        Map(
+          "main" -> Function(
+            2,
+            List.empty,
+            List(
+              AssignStatement(
+                3,
+                "a",
+                ArrayLit(List.empty)
+              ),
+              ReturnStatement(4, ArithmeticConstant(0))
+            )
+          )
+        )
+      )
+    ),
+    (
+      "build AST with array access in expression",
+      """
+      function main() {
+          a = {1, 2, 3};
+          b = a[1] + 5;
+          return b;
+      }
+      """,
+      Program(
+        Map(
+          "main" -> Function(
+            2,
+            List.empty,
+            List(
+              AssignStatement(
+                3,
+                "a",
+                ArrayLit(List(ArithmeticConstant(1), ArithmeticConstant(2), ArithmeticConstant(3)))
+              ),
+              AssignStatement(
+                4,
+                "b",
+                ArithmeticBinaryOperation(
+                  ArrayAccess(Variable("a"), ArithmeticConstant(1)),
+                  ArithmeticBinaryOperator.Add,
+                  ArithmeticConstant(5)
+                )
+              ),
+              ReturnStatement(5, Variable("b"))
+            )
+          )
+        )
+      )
+    ),
+    (
       "build AST with function call",
       """
       function foo(a) {

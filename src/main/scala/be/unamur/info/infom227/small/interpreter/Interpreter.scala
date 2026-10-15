@@ -5,7 +5,9 @@ import be.unamur.info.infom227.small.ast.*
 import scala.collection.immutable.HashMap
 import scala.util.{Failure, Success, Try}
 
-type VariableType = Int | Boolean
+final case class ArrayValue(elements: List[VariableType])
+
+type VariableType = Int | Boolean | ArrayValue
 
 def execute(program: Program, entry: String, arguments: List[VariableType] = List.empty): Try[VariableType] = {
   program.functions.get(entry) match {
@@ -62,6 +64,7 @@ def executeStatement(
 ): Try[(Environments[VariableType], Option[VariableType])] = {
   statement match {
     case assignStatement: AssignStatement => executeAssignStatement(program, environments, assignStatement)
+    case arrayAssignStatement: ArrayAssignStatement => executeArrayAssignStatement(program, environments, arrayAssignStatement)
     case ifStatement: IfStatement => executeIfStatement(program, environments, ifStatement)
     case whileStatement: WhileStatement => executeWhileStatement(program, environments, whileStatement)
     case returnStatement: ReturnStatement => executeReturnStatement(program, environments, returnStatement)
@@ -83,6 +86,11 @@ def executeAssignStatement(
         (newEnvironments, returnValue) <- executeCall(program, environments, call)
         updatedEnvironments <- environments.updated(assignStatement.variable, returnValue)
       } yield (updatedEnvironments, None)
+    case arrayLit: ArrayLit =>
+      for {
+        arrayValue <- executeArrayLit(environments, arrayLit)
+        updatedEnvironments <- environments.updated(assignStatement.variable, arrayValue)
+      } yield (updatedEnvironments, None)
   }
 }
 
@@ -99,6 +107,36 @@ def executeIfStatement(
       executeSequence(program, environments, ifStatement.elseBody)
     }
   } yield result
+}
+
+def executeArrayAssignStatement(program: Program, environments: Environments[VariableType], arrayAssignStatement: ArrayAssignStatement): Try[(Environments[VariableType], Option[VariableType])] = {
+  def store(envs: Environments[VariableType], index: Int, value: VariableType): Try[Environments[VariableType]] =
+    for {
+      array <- envs.get(arrayAssignStatement.variable)
+      updated <- array match {
+        case ArrayValue(elements) => Try(elements.updated(index, value))
+        case _ => Failure(RuntimeException(s"Variable '${arrayAssignStatement.variable}' is not an array."))
+      }
+      result <- envs.updated(arrayAssignStatement.variable, ArrayValue(updated))
+    } yield result
+
+  for {
+    index <- executeArithmeticExpression(environments, arrayAssignStatement.index)
+    updatedEnvironments <- arrayAssignStatement.expression match {
+      case expression: Expression =>
+        executeExpression(environments, expression).flatMap(store(environments, index, _))
+      case call: FunctionCall =>
+        executeCall(program, environments, call).flatMap { case (newEnvs, returnValue) =>
+          store(newEnvs, index, returnValue)
+        }
+    }
+  } yield (updatedEnvironments, None)
+}
+
+def executeArrayLit(environments: Environments[VariableType], arrayLit: ArrayLit): Try[ArrayValue] = {
+  arrayLit.elems.foldLeft(Success(List.empty[VariableType]): Try[List[VariableType]]) { (acc, e) =>
+    for {xs <- acc; v <- executeExpression(environments, e)} yield xs :+ v
+  }.map(ArrayValue(_))
 }
 
 def executeWhileStatement(
@@ -170,6 +208,11 @@ def executeArithmeticExpression(
           case _ => Failure(RuntimeException(s"Variable '$name' is not an integer."))
         }
       } yield intValue
+    case ArrayAccess(variable, index) =>
+      executeArrayAccess(environments, ArrayAccess(variable, index)).flatMap {
+        case intValue: Int => Success(intValue)
+        case _ => Failure(RuntimeException(s"Element at index $index of array '${variable.name}' is not an integer."))
+      }
   }
 }
 
@@ -215,7 +258,23 @@ def executeBooleanExpression(
           case _ => Failure(RuntimeException(s"Variable '$name' is not a boolean."))
         }
       } yield boolValue
+    case ArrayAccess(variable, index) =>
+      executeArrayAccess(environments, ArrayAccess(variable, index)).flatMap {
+        case boolValue: Boolean => Success(boolValue)
+        case _ => Failure(RuntimeException(s"Element at index $index of array '${variable.name}' is not a boolean."))
+      }
   }
+}
+
+def executeArrayAccess(environments: Environments[VariableType], arrayAccess: ArrayAccess): Try[VariableType] = {
+  for {
+    arrayValue <- environments.get(arrayAccess.variable.name)
+    index <- executeArithmeticExpression(environments, arrayAccess.index)
+    element <- arrayValue match {
+      case ArrayValue(xs) => Success(xs(index))
+      case _ => Failure(RuntimeException(s"'${arrayAccess.variable.name}' is not an array."))
+    }
+  } yield element
 }
 
 def executeCall(

@@ -11,7 +11,7 @@ def build(programCst: SmallGrammarParser.ProgramContext): Try[Program] = {
   Builder.visitProgram(programCst)
 }
 
-type VisitorType = Try[Program] | Function | List[String] | List[Statement] | Statement | List[Expression] | FunctionCall | Expression | ArithmeticBinaryOperator | IntegerComparisonOperator | EqualComparisonOperator | BooleanBinaryOperator
+type VisitorType = Try[Program] | Function | List[String] | List[Statement] | Statement | List[Expression] | FunctionCall | Expression | ArithmeticBinaryOperator | IntegerComparisonOperator | EqualComparisonOperator | BooleanBinaryOperator | ArrayLit
 
 private object Builder extends SmallGrammarBaseVisitor[VisitorType] {
   // Program
@@ -59,7 +59,9 @@ private object Builder extends SmallGrammarBaseVisitor[VisitorType] {
   override def visitStmt(ctx: SmallGrammarParser.StmtContext): Statement = {
     if (ctx.assignStmt != null) {
       visitAssignStmt(ctx.assignStmt)
-    } else if (ctx.ifStmt != null) {
+    } else if (ctx.arrayAssignStmt != null) {
+      visitArrayAssignStmt(ctx.arrayAssignStmt)
+    }  else if (ctx.ifStmt != null) {
       visitIfStmt(ctx.ifStmt)
     } else if (ctx.whileStmt != null) {
       visitWhileStmt(ctx.whileStmt)
@@ -75,8 +77,29 @@ private object Builder extends SmallGrammarBaseVisitor[VisitorType] {
       AssignStatement(ctx.start.getLine, ctx.IDENTIFIER.getText, visitExpr(ctx.expr))
     } else if (ctx.funcCall != null) {
       AssignStatement(ctx.start.getLine, ctx.IDENTIFIER.getText, visitFuncCall(ctx.funcCall))
+    } else if (ctx.arrayLit != null) {
+      AssignStatement(ctx.start.getLine, ctx.IDENTIFIER.getText, visitArrayLit(ctx.arrayLit))
     } else {
       throw new AssertionError(s"Unsupported assignment statement : ${ctx.getText}")
+    }
+  }
+
+  override def visitArrayAssignStmt(ctx: SmallGrammarParser.ArrayAssignStmtContext): ArrayAssignStatement = {
+    if (ctx.expr != null) {
+      ArrayAssignStatement(ctx.start.getLine, ctx.IDENTIFIER.getText, visitArithExpr(ctx.arithExpr), visitExpr(ctx.expr))
+    } else if (ctx.funcCall != null) {
+      ArrayAssignStatement(ctx.start.getLine, ctx.IDENTIFIER.getText, visitArithExpr(ctx.arithExpr), visitFuncCall(ctx.funcCall))
+    } else {
+      throw new AssertionError(s"Unsupported array assignment statement : ${ctx.getText}")
+    }
+  }
+
+  override def visitArrayLit(ctx: SmallGrammarParser.ArrayLitContext): ArrayLit = {
+    if (ctx.expr != null) {
+      val elements: List[Expression] = ctx.expr().asScala.map(visitExpr).toList
+      ArrayLit(elements)
+    } else {
+      throw new AssertionError(s"Unsupported array : ${ctx.getText}")
     }
   }
 
@@ -151,6 +174,8 @@ private object Builder extends SmallGrammarBaseVisitor[VisitorType] {
       Variable(ctx.IDENTIFIER.getText)
     } else if (ctx.NUM != null) {
       ArithmeticConstant(ctx.NUM.getText.toInt)
+    } else if (ctx.arrayAccess != null) {
+      visitArrayAccess(ctx.arrayAccess)
     } else {
       throw new AssertionError(s"Unsupported arithmetic operand : ${ctx.getText}")
     }
@@ -163,11 +188,21 @@ private object Builder extends SmallGrammarBaseVisitor[VisitorType] {
       BooleanConstant(true)
     } else if (ctx.FALSE != null) {
       BooleanConstant(false)
+    } else if (ctx.arrayAccess != null) {
+      visitArrayAccess(ctx.arrayAccess)
     } else {
       throw new AssertionError(s"Unsupported boolean operand : ${ctx.getText}")
     }
   }
 
+  override def visitArrayAccess(ctx: SmallGrammarParser.ArrayAccessContext): ArrayAccess = {
+    if (ctx.IDENTIFIER != null && ctx.arithExpr != null) {
+      ArrayAccess(Variable(ctx.IDENTIFIER.getText), visitArithExpr(ctx.arithExpr))
+    } else {
+      throw new AssertionError(s"Unsupported array access : ${ctx.getText}")
+    }
+  }
+  
   // Operators
   override def visitArithOp(ctx: SmallGrammarParser.ArithOpContext): ArithmeticBinaryOperator = {
     if (ctx.ADD != null) {
