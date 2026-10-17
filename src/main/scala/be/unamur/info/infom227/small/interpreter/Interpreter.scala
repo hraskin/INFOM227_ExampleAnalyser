@@ -114,7 +114,11 @@ def executeArrayAssignStatement(program: Program, environments: Environments[Var
     for {
       array <- envs.get(arrayAssignStatement.variable)
       updated <- array match {
-        case ArrayValue(elements) => Try(elements.updated(index, value))
+        case ArrayValue(elements) =>
+          value match {
+            case ArrayValue(_) => Failure(RuntimeException("Cannot assign an array to an array element."))
+            case _ => Try(elements.updated(index, value))
+          }
         case _ => Failure(RuntimeException(s"Variable '${arrayAssignStatement.variable}' is not an array."))
       }
       result <- envs.updated(arrayAssignStatement.variable, ArrayValue(updated))

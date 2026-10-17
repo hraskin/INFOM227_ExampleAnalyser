@@ -100,7 +100,7 @@ stmt: assignStmt | arrayAssignStmt | ifStmt | whileStmt | returnStmt;
 // arrayList uniquement à l'assignation
 assignStmt: IDENTIFIER ASSIGN (expr | funcCall | arrayLit) SEMICOLON;
 
-arrayAssignStmt: IDENTIFIER (LBRACKET arithExpr RBRACKET)? ASSIGN (expr | funcCall) SEMICOLON;
+arrayAssignStmt: IDENTIFIER (LBRACKET arithExpr RBRACKET) ASSIGN (expr | funcCall) SEMICOLON;
 
 ifStmt: IF LPAR boolExpr RPAR ifBody = body ELSE elseBody = body;
 

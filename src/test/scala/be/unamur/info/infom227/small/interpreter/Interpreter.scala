@@ -4,7 +4,7 @@ import be.unamur.info.infom227.small.{ast, cst, interpreter}
 import org.antlr.v4.runtime.CharStreams
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.util.Success
+import scala.util.{Failure, Success}
 
 class Interpreter extends AnyFunSuite {
   Seq(
@@ -208,6 +208,18 @@ class Interpreter extends AnyFunSuite {
       6
     ),
     (
+      "execute expression with boolean array access",
+      """
+      function main() {
+          a = {True, False, True};
+          b = a[0] and a[1];
+          b = b or a[2];
+          return b;
+      }
+      """,
+      true
+    ),
+    (
       "execute array assignment and access",
       """
       function main() {
@@ -217,6 +229,22 @@ class Interpreter extends AnyFunSuite {
       }
       """,
       5
+    ),
+    (
+      "execute multiple array assignments",
+      """
+      function main() {
+          a = {1, 2, 3};
+          b = {4, 5, 6};
+
+          a[0] = b[0];
+          a[1] = b[1];
+          a[2] = b[2];
+
+          return a[0] + a[1];
+      }
+      """,
+      9
     )
   ).foreach { (name, code, expected) =>
     test(name) {
@@ -230,5 +258,27 @@ class Interpreter extends AnyFunSuite {
 
       assert(Success(expected) == result)
     }
+  }
+
+  test("reject assigning an array to an array element") {
+    val code =
+      """
+      function main() {
+          a = {1, 2};
+          b = {3, 4};
+          a[0] = b;
+          return 0;
+      }
+      """
+    val charStream = CharStreams.fromString(code)
+
+    val result = for {
+      programContext <- cst.parse(charStream)
+      program <- ast.build(programContext)
+      result <- interpreter.execute(program, "main")
+    } yield result
+
+    assert(result.failed.get.getMessage == "Cannot assign an array to an array element.")
+    assert(result.isFailure)
   }
 }
