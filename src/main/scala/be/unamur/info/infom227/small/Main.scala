@@ -215,8 +215,27 @@ def handleExit[T](tryResult: Try[T], f: T => Unit): Unit = {
           printAnalysis(intervalAnalyses, others.contains("-v"))
         }
       )
+    case "array-analysis" =>
+      val tryResult = for {
+        program <- buildAstFromFileName(file)
+        cfgs = cfg.build(program)
+        arrayAnalysis <- cfgsAnalysis(
+          cfgs,
+          (_, cfg) => Success(ArrayAccessAnalysis(cfg)),
+          (name, _) => Success(TableObserver(table = Table(bottomSymbol = ArrayAccessAnalysisAbstractValue.Bottom.toString)))
+        )
+      } yield arrayAnalysis
+
+      handleExit(
+        tryResult,
+        arrayAnalysis => {
+          printTitle("Array Analysis")
+          printAnalysis(arrayAnalysis, others.contains("-v"))
+        }
+      )
     case action =>
       println(f"Unknown action: $action")
       System.exit(UNKNOWN_ACTION_ERROR_CODE)
   }
+
 }
