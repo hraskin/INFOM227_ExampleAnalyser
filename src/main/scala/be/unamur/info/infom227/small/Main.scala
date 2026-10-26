@@ -35,10 +35,10 @@ def printTitle(title: String, size: Int = 50): Unit = {
 }
 
 def printAnalysis[T <: Lattice[T], S <: State[T]](
-  analyses: Map[String, (AnalysisState[S], TableObserver[T, S])],
-  verbose: Boolean,
-  f: String => Unit = _ => {}
-): Unit = {
+                                                   analyses: Map[String, (AnalysisState[S], TableObserver[T, S])],
+                                                   verbose: Boolean,
+                                                   f: String => Unit = _ => {}
+                                                 ): Unit = {
   for ((name, (_, observer)) <- analyses) {
     println(s"Analysis for $name:")
     if (verbose) {
@@ -224,13 +224,31 @@ def handleExit[T](tryResult: Try[T], f: T => Unit): Unit = {
           (_, cfg) => Success(ArrayAccessAnalysis(cfg)),
           (name, _) => Success(TableObserver(table = Table(bottomSymbol = ArrayAccessAnalysisAbstractValue.Bottom.toString)))
         )
-      } yield arrayAnalysis
+        moduleDiagnostics <- cfgsAnalysis(
+          cfgs,
+          (name, cfg) => {
+            arrayAnalysis.get(name) match {
+              case Some((arrayAnalysis, _)) => Success(ArrayAccessAnalysisInterpreter(cfg, arrayAnalysis))
+              case None => Failure(new Exception(s"Array access analysis not found for $name"))
+            }
+          },
+          (_, _) => Success(DummyObserver())
+        )
+      } yield (arrayAnalysis, moduleDiagnostics)
 
       handleExit(
         tryResult,
-        arrayAnalysis => {
+        (arrayAnalysis, moduleDiagnostics) => {
           printTitle("Array Analysis")
-          printAnalysis(arrayAnalysis, others.contains("-v"))
+          printAnalysis(arrayAnalysis, others.contains("-v"),
+            name => {
+              moduleDiagnostics.get(name).foreach((diagnostics, _) => {
+                for ((diagnosticType, message) <-
+                       diagnostics.abstractStates(ProgramPoint.ExitPoint).diagnostics) {
+                  println(s"  [$diagnosticType] $message\n")
+                }
+              })
+            })
         }
       )
     case action =>

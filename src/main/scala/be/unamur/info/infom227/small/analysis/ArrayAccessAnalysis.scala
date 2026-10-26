@@ -2,7 +2,9 @@ package be.unamur.info.infom227.small.analysis
 
 import be.unamur.info.infom227.small.analysis.ArrayAccessAnalysisAbstractValue.{Interval, Unknown}
 import be.unamur.info.infom227.small.ast.*
-import be.unamur.info.infom227.small.cfg.Cfg
+import be.unamur.info.infom227.small.cfg.{Cfg, ProgramPoint}
+
+import scala.util.Try
 
 enum ArrayAccessAnalysisAbstractValue extends Lattice[ArrayAccessAnalysisAbstractValue]:
   case Unknown
@@ -61,6 +63,8 @@ class ArrayAccessAnalysis(cfg: Cfg) extends ForwardMayAnalyzer[AbstractState[Arr
               case other =>
                 abstractState(variable -> other)
             }
+          case ArrayLit(elems) =>
+            abstractState(variable -> Interval(elems.length, elems.length))
           case _ =>
             abstractState(variable -> Unknown)
         }
@@ -84,4 +88,97 @@ class ArrayAccessAnalysis(cfg: Cfg) extends ForwardMayAnalyzer[AbstractState[Arr
       case _ =>
         Some(abstractState)
     }
+  }
+
+
+enum DiagnosticType:
+  case Warning
+  case Error
+
+case class ArrayAccessAnalysisInterpreterAbstractState(diagnostics: Set[(DiagnosticType, String)] = Set()) extends Lattice[ArrayAccessAnalysisInterpreterAbstractState]:
+  def addDiagnostic(
+                     diagnosticType: DiagnosticType,
+                     message: String
+                   ): ArrayAccessAnalysisInterpreterAbstractState = {
+    ArrayAccessAnalysisInterpreterAbstractState(diagnostics + ((diagnosticType, message)))
+  }
+
+  override def join(other: ArrayAccessAnalysisInterpreterAbstractState): ArrayAccessAnalysisInterpreterAbstractState = {
+    ArrayAccessAnalysisInterpreterAbstractState(diagnostics ++ other.diagnostics)
+  }
+
+  override def meet(other: ArrayAccessAnalysisInterpreterAbstractState): ArrayAccessAnalysisInterpreterAbstractState = {
+    ArrayAccessAnalysisInterpreterAbstractState(diagnostics.intersect(other.diagnostics))
+  }
+
+class ArrayAccessAnalysisInterpreter(
+                                      cfg: Cfg,
+                                      arrayAccessAnalysisState: AnalysisState[AbstractState[ArrayAccessAnalysisAbstractValue]]
+                                    ) extends ForwardMayAnalyzer[ArrayAccessAnalysisInterpreterAbstractState](cfg):
+  override def entryAbstractState(): ArrayAccessAnalysisInterpreterAbstractState = ArrayAccessAnalysisInterpreterAbstractState()
+
+  private def checkAccess(
+                           acc: ArrayAccessAnalysisInterpreterAbstractState,
+                           line: Int,
+                           array: String,
+                           index: ArrayAccessAnalysisAbstractValue,
+                           size: ArrayAccessAnalysisAbstractValue
+                         ): ArrayAccessAnalysisInterpreterAbstractState = {
+    (index, size) match {
+      case (ArrayAccessAnalysisAbstractValue.Bottom, _) => acc
+      case (Interval(lo, hi), Interval(nLo, nHi)) =>
+        if (hi < 0 || lo >= nHi) acc.addDiagnostic(DiagnosticType.Error, s"Out-of-bounds access to $array at line $line")
+        else if (lo >= 0 && hi < nLo) acc
+        else acc.addDiagnostic(DiagnosticType.Warning, s"Potential out-of-bounds access to $array at line $line")
+      case _ =>
+        acc.addDiagnostic(DiagnosticType.Warning, s"Cannot verify access to $array at line $line")
+    }
+  }
+
+  override def analyseStatement(
+                                 abstractState: ArrayAccessAnalysisInterpreterAbstractState,
+                                 statement: Statement
+                               ): ArrayAccessAnalysisInterpreterAbstractState = {
+    arrayAccessAnalysisState.abstractStates.get(ProgramPoint.StatementPoint(statement)) match {
+      case Some(state) =>
+        statement match {
+          // Assign Statement
+          case AssignStatement(line, _, ArrayAccess(Variable(a), Variable(i))) =>
+            checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
+
+          // Arith Assign
+          case AssignStatement(line, _, ArithmeticBinaryOperation(_, _, ArrayAccess(Variable(a), Variable(i)))) =>
+            checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
+          case AssignStatement(line, _, ArithmeticBinaryOperation(ArrayAccess(Variable(a), Variable(i)), _, _)) =>
+            checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
+
+          // Boolean Assign
+          case AssignStatement(line, _, BooleanBinaryOperation(_, _, ArrayAccess(Variable(a), Variable(i)))) =>
+            checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
+          case AssignStatement(line, _, BooleanBinaryOperation(ArrayAccess(Variable(a), Variable(i)), _, _)) =>
+            checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
+
+          // Return Statement
+          case ReturnStatement(line, ArrayAccess(Variable(a), Variable(i))) =>
+            checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
+          case ReturnStatement(line, ArithmeticBinaryOperation(_, _, ArrayAccess(Variable(a), Variable(i)))) =>
+            checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
+          case ReturnStatement(line, ArithmeticBinaryOperation(ArrayAccess(Variable(a), Variable(i)), _, _)) =>
+            checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
+          case ReturnStatement(line, BooleanBinaryOperation(_, _, ArrayAccess(Variable(a), Variable(i)))) =>
+            checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
+          case ReturnStatement(line, BooleanBinaryOperation(ArrayAccess(Variable(a), Variable(i)), _, _)) =>
+            checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
+
+          case _ => abstractState
+        }
+      case None => abstractState
+    }
+  }
+
+  override def conditionUpdate(
+                                abstractState: ArrayAccessAnalysisInterpreterAbstractState,
+                                condition: BooleanExpression
+                              ): Option[ArrayAccessAnalysisInterpreterAbstractState] = {
+    Some(abstractState)
   }
