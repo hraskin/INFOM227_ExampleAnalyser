@@ -1,54 +1,54 @@
 package be.unamur.info.infom227.small.analysis
 
-import be.unamur.info.infom227.small.analysis.ArrayAccessAnalysisAbstractValue.{Interval, Unknown}
+import be.unamur.info.infom227.small.analysis.ArrayAbstractValue.{Interval, Unknown}
 import be.unamur.info.infom227.small.ast.*
 import be.unamur.info.infom227.small.cfg.{Cfg, ProgramPoint}
 
 import scala.util.Try
 
-enum ArrayAccessAnalysisAbstractValue extends Lattice[ArrayAccessAnalysisAbstractValue]:
+enum ArrayAbstractValue extends Lattice[ArrayAbstractValue]:
   case Unknown
   case Interval(lower: Double, upper: Double)
   case Bottom
 
-  override def join(other: ArrayAccessAnalysisAbstractValue): ArrayAccessAnalysisAbstractValue = {
+  override def join(other: ArrayAbstractValue): ArrayAbstractValue = {
     (this, other) match {
-      case (ArrayAccessAnalysisAbstractValue.Bottom, _) => other
-      case (_, ArrayAccessAnalysisAbstractValue.Bottom) => this
-      case (ArrayAccessAnalysisAbstractValue.Interval(a, b), ArrayAccessAnalysisAbstractValue.Interval(c, d)) =>
+      case (Bottom, _) => other
+      case (_, Bottom) => this
+      case (Interval(a, b), Interval(c, d)) =>
         val lo = math.min(a, c)
         val hi = math.max(b, d)
-        if (lo > hi) ArrayAccessAnalysisAbstractValue.Bottom
-        else ArrayAccessAnalysisAbstractValue.Interval(lo, hi)
-      case _ => ArrayAccessAnalysisAbstractValue.Unknown
+        if (lo > hi) Bottom
+        else Interval(lo, hi)
+      case _ => Unknown
     }
   }
 
-  override def meet(other: ArrayAccessAnalysisAbstractValue): ArrayAccessAnalysisAbstractValue = {
+  override def meet(other: ArrayAbstractValue): ArrayAbstractValue = {
     (this, other) match {
-      case (ArrayAccessAnalysisAbstractValue.Unknown, _) => other
-      case (_, ArrayAccessAnalysisAbstractValue.Unknown) => this
-      case (ArrayAccessAnalysisAbstractValue.Interval(a, b), ArrayAccessAnalysisAbstractValue.Interval(c, d)) =>
+      case (Unknown, _) => other
+      case (_, Unknown) => this
+      case (Interval(a, b), Interval(c, d)) =>
         val lo = math.max(a, c)
         val hi = math.min(b, d)
-        if (lo > hi) ArrayAccessAnalysisAbstractValue.Bottom
-        else ArrayAccessAnalysisAbstractValue.Interval(lo, hi)
-      case _ => ArrayAccessAnalysisAbstractValue.Bottom
+        if (lo > hi) Bottom
+        else Interval(lo, hi)
+      case _ => Bottom
     }
   }
 
   override def toString: String = {
     this match {
-      case ArrayAccessAnalysisAbstractValue.Unknown => "U"
-      case ArrayAccessAnalysisAbstractValue.Bottom => "⊥"
-      case ArrayAccessAnalysisAbstractValue.Interval(a, b) => s"[$a, $b]"
+      case Unknown => "U"
+      case Bottom => "⊥"
+      case Interval(a, b) => s"[$a, $b]"
     }
   }
 
-class ArrayAccessAnalysis(cfg: Cfg) extends ForwardMayAnalyzer[AbstractState[ArrayAccessAnalysisAbstractValue]](cfg):
-  override def entryAbstractState(): AbstractState[ArrayAccessAnalysisAbstractValue] = AbstractState(cfg.parameters.map { parameter => parameter -> ArrayAccessAnalysisAbstractValue.Unknown }.toMap)
+class ArrayAccessAnalysis(cfg: Cfg) extends ForwardMayAnalyzer[AbstractState[ArrayAbstractValue]](cfg):
+  override def entryAbstractState(): AbstractState[ArrayAbstractValue] = AbstractState(cfg.parameters.map { parameter => parameter -> Unknown }.toMap)
 
-  final override def analyseStatement(abstractState: AbstractState[ArrayAccessAnalysisAbstractValue], statement: Statement): AbstractState[ArrayAccessAnalysisAbstractValue] = {
+  final override def analyseStatement(abstractState: AbstractState[ArrayAbstractValue], statement: Statement): AbstractState[ArrayAbstractValue] = {
     statement match {
       case AssignStatement(lineNumber, variable, expression) =>
         expression match {
@@ -73,16 +73,16 @@ class ArrayAccessAnalysis(cfg: Cfg) extends ForwardMayAnalyzer[AbstractState[Arr
     }
   }
 
-  final override def conditionUpdate(abstractState: AbstractState[ArrayAccessAnalysisAbstractValue], condition: BooleanExpression): Option[AbstractState[ArrayAccessAnalysisAbstractValue]] = {
+  final override def conditionUpdate(abstractState: AbstractState[ArrayAbstractValue], condition: BooleanExpression): Option[AbstractState[ArrayAbstractValue]] = {
     condition match {
       case IntegerComparisonOperation(Variable(v), IntegerComparisonOperator.Lt, ArithmeticConstant(c)) =>
         abstractState(v).meet(Interval(Double.NegativeInfinity, c.toDouble - 1)) match {
-          case ArrayAccessAnalysisAbstractValue.Bottom => None
+          case ArrayAbstractValue.Bottom => None
           case refined => Some(abstractState(v -> refined))
         }
       case IntegerComparisonOperation(Variable(v), IntegerComparisonOperator.Gte, ArithmeticConstant(c)) =>
         abstractState(v).meet(Interval(c.toDouble, Double.PositiveInfinity)) match {
-          case ArrayAccessAnalysisAbstractValue.Bottom => None
+          case ArrayAbstractValue.Bottom => None
           case refined => Some(abstractState(v -> refined))
         }
       case _ =>
@@ -95,37 +95,25 @@ enum DiagnosticType:
   case Warning
   case Error
 
-case class ArrayAccessAnalysisInterpreterAbstractState(diagnostics: Set[(DiagnosticType, String)] = Set()) extends Lattice[ArrayAccessAnalysisInterpreterAbstractState]:
-  def addDiagnostic(
-                     diagnosticType: DiagnosticType,
-                     message: String
-                   ): ArrayAccessAnalysisInterpreterAbstractState = {
-    ArrayAccessAnalysisInterpreterAbstractState(diagnostics + ((diagnosticType, message)))
+case class ArrayInterpreterAbstractState(diagnostics: Set[(DiagnosticType, String)] = Set()) extends Lattice[ArrayInterpreterAbstractState]:
+  def addDiagnostic(diagnosticType: DiagnosticType, message: String): ArrayInterpreterAbstractState = {
+    ArrayInterpreterAbstractState(diagnostics + ((diagnosticType, message)))
   }
 
-  override def join(other: ArrayAccessAnalysisInterpreterAbstractState): ArrayAccessAnalysisInterpreterAbstractState = {
-    ArrayAccessAnalysisInterpreterAbstractState(diagnostics ++ other.diagnostics)
+  override def join(other: ArrayInterpreterAbstractState): ArrayInterpreterAbstractState = {
+    ArrayInterpreterAbstractState(diagnostics ++ other.diagnostics)
   }
 
-  override def meet(other: ArrayAccessAnalysisInterpreterAbstractState): ArrayAccessAnalysisInterpreterAbstractState = {
-    ArrayAccessAnalysisInterpreterAbstractState(diagnostics.intersect(other.diagnostics))
+  override def meet(other: ArrayInterpreterAbstractState): ArrayInterpreterAbstractState = {
+    ArrayInterpreterAbstractState(diagnostics.intersect(other.diagnostics))
   }
 
-class ArrayAccessAnalysisInterpreter(
-                                      cfg: Cfg,
-                                      arrayAccessAnalysisState: AnalysisState[AbstractState[ArrayAccessAnalysisAbstractValue]]
-                                    ) extends ForwardMayAnalyzer[ArrayAccessAnalysisInterpreterAbstractState](cfg):
-  override def entryAbstractState(): ArrayAccessAnalysisInterpreterAbstractState = ArrayAccessAnalysisInterpreterAbstractState()
+class ArrayAnalysisInterpreter(cfg: Cfg, arrayAccessAnalysisState: AnalysisState[AbstractState[ArrayAbstractValue]]) extends ForwardMayAnalyzer[ArrayInterpreterAbstractState](cfg):
+  override def entryAbstractState(): ArrayInterpreterAbstractState = ArrayInterpreterAbstractState()
 
-  private def checkAccess(
-                           acc: ArrayAccessAnalysisInterpreterAbstractState,
-                           line: Int,
-                           array: String,
-                           index: ArrayAccessAnalysisAbstractValue,
-                           size: ArrayAccessAnalysisAbstractValue
-                         ): ArrayAccessAnalysisInterpreterAbstractState = {
+  private def checkAccess(acc: ArrayInterpreterAbstractState, line: Int, array: String, index: ArrayAbstractValue, size: ArrayAbstractValue): ArrayInterpreterAbstractState = {
     (index, size) match {
-      case (ArrayAccessAnalysisAbstractValue.Bottom, _) => acc
+      case (ArrayAbstractValue.Bottom, _) => acc
       case (Interval(lo, hi), Interval(nLo, nHi)) =>
         if (hi < 0 || lo >= nHi) acc.addDiagnostic(DiagnosticType.Error, s"Out-of-bounds access to $array at line $line")
         else if (lo >= 0 && hi < nLo) acc
@@ -135,10 +123,7 @@ class ArrayAccessAnalysisInterpreter(
     }
   }
 
-  override def analyseStatement(
-                                 abstractState: ArrayAccessAnalysisInterpreterAbstractState,
-                                 statement: Statement
-                               ): ArrayAccessAnalysisInterpreterAbstractState = {
+  override def analyseStatement(abstractState: ArrayInterpreterAbstractState, statement: Statement): ArrayInterpreterAbstractState = {
     arrayAccessAnalysisState.abstractStates.get(ProgramPoint.StatementPoint(statement)) match {
       case Some(state) =>
         statement match {
@@ -176,9 +161,6 @@ class ArrayAccessAnalysisInterpreter(
     }
   }
 
-  override def conditionUpdate(
-                                abstractState: ArrayAccessAnalysisInterpreterAbstractState,
-                                condition: BooleanExpression
-                              ): Option[ArrayAccessAnalysisInterpreterAbstractState] = {
+  override def conditionUpdate(abstractState: ArrayInterpreterAbstractState, condition: BooleanExpression): Option[ArrayInterpreterAbstractState] = {
     Some(abstractState)
   }
