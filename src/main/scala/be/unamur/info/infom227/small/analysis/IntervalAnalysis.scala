@@ -1,6 +1,7 @@
 package be.unamur.info.infom227.small.analysis
 
-import be.unamur.info.infom227.small.analysis.IntervalAnalysisAbstractValue.Unknown
+import be.unamur.info.infom227.small.analysis.IntervalAnalysisAbstractValue.{Bottom, Interval, Unknown}
+import be.unamur.info.infom227.small.analysis.IntervalNumber.{Integer, NegInf, PosInf}
 import be.unamur.info.infom227.small.ast
 import be.unamur.info.infom227.small.ast.*
 import be.unamur.info.infom227.small.cfg.{Cfg, ProgramPoint}
@@ -88,24 +89,16 @@ object IntervalAnalysisAbstractValue:
     }
   }
 
-
 /*
 ========================
   FIRST PASS ANALYSIS
 ========================
  */
 
-class IntervalAnalysis(
-  cfg: Cfg,
-  maxIteration: Int = 5
-) extends ForwardMayAnalyzer[IterationAbstractState[IntervalAnalysisAbstractValue]](cfg):
+class IntervalAnalysis(cfg: Cfg, maxIteration: Int = 5 ) extends ForwardMayAnalyzer[IterationAbstractState[IntervalAnalysisAbstractValue]](cfg):
   override def entryAbstractState(): IterationAbstractState[IntervalAnalysisAbstractValue] = IterationAbstractState(state = AbstractState(cfg.parameters.map { parameter => parameter -> IntervalAnalysisAbstractValue.Unknown }.toMap))
 
-  def evaluateOperation(
-    left: IntervalNumber,
-    operator: ArithmeticBinaryOperator,
-    right: IntervalNumber
-  ): Option[IntervalNumber] = {
+  def evaluateOperation(left: IntervalNumber, operator: ArithmeticBinaryOperator, right: IntervalNumber): Option[IntervalNumber] = {
     (left, operator, right) match {
       case (IntervalNumber.Integer(leftVal), ArithmeticBinaryOperator.Add, IntervalNumber.Integer(rightVal)) => Some(IntervalNumber.Integer(leftVal + rightVal))
       case (IntervalNumber.Integer(leftVal), ArithmeticBinaryOperator.Sub, IntervalNumber.Integer(rightVal)) => Some(IntervalNumber.Integer(leftVal - rightVal))
@@ -159,10 +152,7 @@ class IntervalAnalysis(
     }
   }
 
-  final override def analyseStatement(
-    abstractState: IterationAbstractState[IntervalAnalysisAbstractValue],
-    statement: Statement
-  ): IterationAbstractState[IntervalAnalysisAbstractValue] = {
+  final override def analyseStatement(abstractState: IterationAbstractState[IntervalAnalysisAbstractValue], statement: Statement): IterationAbstractState[IntervalAnalysisAbstractValue] = {
     statement match {
       case AssignStatement(lineNumber, variable, expression) =>
         expression match {
@@ -195,17 +185,27 @@ class IntervalAnalysis(
     }
   }
 
-  final override def conditionUpdate(
-    abstractState: IterationAbstractState[IntervalAnalysisAbstractValue],
-    condition: BooleanExpression
-  ): Option[IterationAbstractState[IntervalAnalysisAbstractValue]] = {
+  final override def conditionUpdate(abstractState: IterationAbstractState[IntervalAnalysisAbstractValue], condition: BooleanExpression): Option[IterationAbstractState[IntervalAnalysisAbstractValue]] = {
     condition match {
       case BooleanConstant(true) =>
         Some(abstractState)
       case BooleanConstant(false) =>
         None
       case IntegerComparisonOperation(Variable(x), EqualComparisonOperator.Eq, ArithmeticConstant(c)) =>
-        Some(abstractState(x -> IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c))))
+        abstractState(x).meet(IntervalAnalysisAbstractValue.constant(Integer(c))) match {
+          case IntervalAnalysisAbstractValue.Bottom => None // Condition non satisfaite, on ignore
+          case value => Some(abstractState(x -> value))
+        }
+      case IntegerComparisonOperation(ArithmeticConstant(c), EqualComparisonOperator.Eq, Variable(x)) =>
+        abstractState(x).meet(IntervalAnalysisAbstractValue.constant(Integer(c))) match {
+          case Bottom => None
+          case value => Some(abstractState(x -> value))
+        }
+      case IntegerComparisonOperation(Variable(x), EqualComparisonOperator.Eq, Variable(y)) =>
+        abstractState(x).meet(abstractState(y)) match {
+          case IntervalAnalysisAbstractValue.Bottom => None
+          case value => Some(abstractState(x -> value)(y -> value))
+        }
       case IntegerComparisonOperation(Variable(x), operator: IntegerComparisonOperator, ArithmeticConstant(c)) =>
         val validRange = operator match {
           case IntegerComparisonOperator.Lt => IntervalAnalysisAbstractValue.Interval(IntervalNumber.NegInf, IntervalNumber.Integer(c - 1))
@@ -228,17 +228,120 @@ class IntervalAnalysis(
           case IntervalAnalysisAbstractValue.Bottom => None
           case value => Some(abstractState(x -> value))
         }
+
+      // x < y : [-inf, yHigh -1] [xLow +1, +inf]
+      case IntegerComparisonOperation(Variable(x), IntegerComparisonOperator.Lt, Variable(y)) =>
+        (abstractState(x), abstractState(y)) match {
+          case (Interval(xFrom, xTo), Interval(yFrom, yTo)) =>
+            val newX = abstractState(x).meet(
+              Interval(NegInf, yTo match {
+                case Integer(v) => Integer(v - 1)
+                case other => other
+              })
+            )
+            val newY = abstractState(y).meet(
+              Interval(xFrom match {
+                case Integer(v) => Integer(v + 1)
+                case other => other
+              }, PosInf)
+            )
+
+            (newX, newY) match {
+              case (IntervalAnalysisAbstractValue.Bottom, _) => None
+              case (_, IntervalAnalysisAbstractValue.Bottom) => None
+              case _ => Some(abstractState(x -> newX)(y -> newY))
+            }
+          case _ => Some(abstractState)
+        }
+
+      // x <= y : [-inf, yHigh] [xHigh, +inf]
+      case IntegerComparisonOperation(Variable(x), IntegerComparisonOperator.Lte, Variable(y)) =>
+        (abstractState(x), abstractState(y)) match {
+          case (Interval(xFrom, xTo), Interval(yFrom, yTo)) =>
+            val newX = abstractState(x).meet(Interval(NegInf, yTo))
+            val newY = abstractState(y).meet(Interval(xFrom, PosInf))
+
+            (newX, newY) match {
+              case (IntervalAnalysisAbstractValue.Bottom, _) => None
+              case (_, IntervalAnalysisAbstractValue.Bottom) => None
+              case _ => Some(abstractState(x -> newX)(y -> newY))
+            }
+          case _ => Some(abstractState)
+        }
+
+      // x > y : [yHigh +1, +inf] [-inf, xHigh -1]
+      case IntegerComparisonOperation(Variable(x), IntegerComparisonOperator.Gt, Variable(y)) =>
+        (abstractState(x), abstractState(y)) match {
+          case (Interval(xFrom, xTo), Interval(yFrom, yTo)) =>
+            val newX = abstractState(x).meet(
+              Interval(
+                yFrom match {
+                  case IntervalNumber.Integer(v) => IntervalNumber.Integer(v + 1)
+                  case other => other
+                },
+                PosInf
+              )
+            )
+            val newY = abstractState(y).meet(
+              Interval(
+                NegInf,
+                xTo match {
+                  case IntervalNumber.Integer(v) => IntervalNumber.Integer(v - 1)
+                  case other => other
+                }
+              )
+            )
+
+            (newX, newY) match {
+              case (IntervalAnalysisAbstractValue.Bottom, _) => None
+              case (_, IntervalAnalysisAbstractValue.Bottom) => None
+              case _ => Some(abstractState(x -> newX)(y -> newY))
+            }
+          case _ => Some(abstractState)
+        }
+
+      // x >= y : [yLow, +inf] [-inf, xHigh]
+      case IntegerComparisonOperation(Variable(x), IntegerComparisonOperator.Gte, Variable(y)) =>
+        (abstractState(x), abstractState(y)) match {
+          case (Interval(xFrom, xTo), Interval(yFrom, yTo)) =>
+            val newX = abstractState(x).meet(Interval(yFrom, PosInf))
+            val newY = abstractState(y).meet(Interval(NegInf, xTo))
+
+            (newX, newY) match {
+              case (IntervalAnalysisAbstractValue.Bottom, _) => None
+              case (_, IntervalAnalysisAbstractValue.Bottom) => None
+              case _ => Some(abstractState(x -> newX)(y -> newY))
+            }
+          case _ => Some(abstractState)
+        }
+
+      case IntegerComparisonOperation(Variable(x), EqualComparisonOperator.Ne, Variable(y)) =>
+        (abstractState(x), abstractState(y)) match {
+          case (Interval(xFrom, xTo), Interval(yFrom, yTo))
+            if xFrom == xTo && yFrom == yTo && xFrom == yFrom => None
+          case _ =>
+            Some(abstractState)
+        }
+      case IntegerComparisonOperation(Variable(x), EqualComparisonOperator.Ne, ArithmeticConstant(c)) =>
+        abstractState(x) match {
+          case Interval(Integer(from), Integer(to))
+            if from == c && to == c => None
+          case _ =>
+            Some(abstractState)
+        }
+      case IntegerComparisonOperation(ArithmeticConstant(c), EqualComparisonOperator.Ne, Variable(x)) =>
+        abstractState(x) match {
+          case Interval(Integer(from), Integer(to))
+            if from == c && to == c => None
+          case _ =>
+            Some(abstractState)
+        }
       case _ =>
         Some(abstractState)
     }
   }
 
-  override def merge(
-    analysisState: AnalysisState[IterationAbstractState[IntervalAnalysisAbstractValue]],
-    node: ProgramPoint,
-    left: IterationAbstractState[IntervalAnalysisAbstractValue],
-    right: IterationAbstractState[IntervalAnalysisAbstractValue]
-  ): Try[IterationAbstractState[IntervalAnalysisAbstractValue]] = {
+  override def merge(analysisState: AnalysisState[IterationAbstractState[IntervalAnalysisAbstractValue]], node: ProgramPoint, left: IterationAbstractState[IntervalAnalysisAbstractValue], right: IterationAbstractState[IntervalAnalysisAbstractValue]): Try[IterationAbstractState[IntervalAnalysisAbstractValue]] = {
     var tryWiden = false
 
     val joined = left.joinWith(
