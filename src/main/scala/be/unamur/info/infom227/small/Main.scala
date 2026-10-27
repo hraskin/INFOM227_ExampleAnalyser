@@ -206,41 +206,23 @@ def handleExit[T](tryResult: Try[T], f: T => Unit): Unit = {
           (_, cfg) => Success(IntervalAnalysis(cfg)),
           (name, _) => Success(TableObserver(table = Table(bottomSymbol = IntervalAnalysisAbstractValue.Bottom.toString)))
         )
-      } yield intervalAnalyses
-
-      handleExit(
-        tryResult,
-        intervalAnalyses => {
-          printTitle("Interval Analysis")
-          printAnalysis(intervalAnalyses, others.contains("-v"))
-        }
-      )
-    case "array-analysis" =>
-      val tryResult = for {
-        program <- buildAstFromFileName(file)
-        cfgs = cfg.build(program)
-        arrayAnalysis <- cfgsAnalysis(
-          cfgs,
-          (_, cfg) => Success(ArrayAccessAnalysis(cfg)),
-          (name, _) => Success(TableObserver(table = Table(bottomSymbol = ArrayAccessAnalysisAbstractValue.Bottom.toString)))
-        )
         moduleDiagnostics <- cfgsAnalysis(
           cfgs,
           (name, cfg) => {
-            arrayAnalysis.get(name) match {
-              case Some((arrayAnalysis, _)) => Success(ArrayAccessAnalysisInterpreter(cfg, arrayAnalysis))
+            intervalAnalyses.get(name) match {
+              case Some((intervalAnalysis, _)) => Success(IntervalAnalysisInterpreter(cfg, intervalAnalysis))
               case None => Failure(new Exception(s"Array access analysis not found for $name"))
             }
           },
           (_, _) => Success(DummyObserver())
         )
-      } yield (arrayAnalysis, moduleDiagnostics)
+      } yield (intervalAnalyses, moduleDiagnostics)
 
       handleExit(
         tryResult,
-        (arrayAnalysis, moduleDiagnostics) => {
-          printTitle("Array Analysis")
-          printAnalysis(arrayAnalysis, others.contains("-v"),
+        (intervalAnalyses, moduleDiagnostics) => {
+          printTitle("Interval Analysis")
+          printAnalysis(intervalAnalyses, others.contains("-v"),
             name => {
               moduleDiagnostics.get(name).foreach((diagnostics, _) => {
                 for ((diagnosticType, message) <-
