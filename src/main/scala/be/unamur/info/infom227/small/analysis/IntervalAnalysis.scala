@@ -95,62 +95,62 @@ object IntervalAnalysisAbstractValue:
 ========================
  */
 
-class IntervalAnalysis(cfg: Cfg, maxIteration: Int = 5 ) extends ForwardMayAnalyzer[IterationAbstractState[IntervalAnalysisAbstractValue]](cfg):
-  override def entryAbstractState(): IterationAbstractState[IntervalAnalysisAbstractValue] = IterationAbstractState(state = AbstractState(cfg.parameters.map { parameter => parameter -> IntervalAnalysisAbstractValue.Unknown }.toMap))
-
-  def evaluateOperation(left: IntervalNumber, operator: ArithmeticBinaryOperator, right: IntervalNumber): Option[IntervalNumber] = {
-    (left, operator, right) match {
-      case (IntervalNumber.Integer(leftVal), ArithmeticBinaryOperator.Add, IntervalNumber.Integer(rightVal)) => Some(IntervalNumber.Integer(leftVal + rightVal))
-      case (IntervalNumber.Integer(leftVal), ArithmeticBinaryOperator.Sub, IntervalNumber.Integer(rightVal)) => Some(IntervalNumber.Integer(leftVal - rightVal))
-      case (IntervalNumber.Integer(leftVal), ArithmeticBinaryOperator.Mul, IntervalNumber.Integer(rightVal)) => Some(IntervalNumber.Integer(leftVal * rightVal))
-      case (IntervalNumber.Integer(leftVal), ArithmeticBinaryOperator.Div, IntervalNumber.Integer(rightVal)) => if (rightVal == 0) {
-        None
-      } else {
-        Some(IntervalNumber.Integer(leftVal / rightVal))
-      }
-      case (IntervalNumber.PosInf, ArithmeticBinaryOperator.Add | ArithmeticBinaryOperator.Sub, IntervalNumber.Integer(_)) => Some(IntervalNumber.PosInf)
-      case (IntervalNumber.PosInf, ArithmeticBinaryOperator.Mul | ArithmeticBinaryOperator.Div, IntervalNumber.Integer(c)) => if (c > 0) {
-        Some(IntervalNumber.PosInf)
-      } else if (c < 0) {
-        Some(IntervalNumber.NegInf)
-      } else {
-        None
-      }
-      case (IntervalNumber.Integer(_), ArithmeticBinaryOperator.Add, IntervalNumber.PosInf) => Some(IntervalNumber.PosInf)
-      case (IntervalNumber.Integer(_), ArithmeticBinaryOperator.Sub, IntervalNumber.PosInf) => Some(IntervalNumber.NegInf)
-      case (IntervalNumber.Integer(c), ArithmeticBinaryOperator.Mul, IntervalNumber.PosInf) => if (c > 0) {
-        Some(IntervalNumber.PosInf)
-      } else if (c < 0) {
-        Some(IntervalNumber.NegInf)
-      } else {
-        None
-      }
-      case (IntervalNumber.Integer(c), ArithmeticBinaryOperator.Div, IntervalNumber.PosInf) => Some(IntervalNumber.Integer(0))
-      case (IntervalNumber.PosInf, ArithmeticBinaryOperator.Add, IntervalNumber.PosInf) => Some(IntervalNumber.PosInf)
-      case (IntervalNumber.PosInf, ArithmeticBinaryOperator.Sub, IntervalNumber.NegInf) => Some(IntervalNumber.PosInf)
-      case (IntervalNumber.NegInf, ArithmeticBinaryOperator.Add | ArithmeticBinaryOperator.Sub, IntervalNumber.Integer(_)) => Some(IntervalNumber.NegInf)
-      case (IntervalNumber.NegInf, ArithmeticBinaryOperator.Mul | ArithmeticBinaryOperator.Div, IntervalNumber.Integer(c)) => if (c > 0) {
-        Some(IntervalNumber.NegInf)
-      } else if (c < 0) {
-        Some(IntervalNumber.PosInf)
-      } else {
-        None
-      }
-      case (IntervalNumber.Integer(_), ArithmeticBinaryOperator.Add, IntervalNumber.NegInf) => Some(IntervalNumber.NegInf)
-      case (IntervalNumber.Integer(_), ArithmeticBinaryOperator.Sub, IntervalNumber.NegInf) => Some(IntervalNumber.PosInf)
-      case (IntervalNumber.Integer(c), ArithmeticBinaryOperator.Mul, IntervalNumber.NegInf) => if (c > 0) {
-        Some(IntervalNumber.NegInf)
-      } else if (c < 0) {
-        Some(IntervalNumber.PosInf)
-      } else {
-        None
-      }
-      case (IntervalNumber.Integer(c), ArithmeticBinaryOperator.Div, IntervalNumber.NegInf) => Some(IntervalNumber.Integer(0))
-      case (IntervalNumber.NegInf, ArithmeticBinaryOperator.Add, IntervalNumber.NegInf) => Some(IntervalNumber.NegInf)
-      case (IntervalNumber.NegInf, ArithmeticBinaryOperator.Sub, IntervalNumber.PosInf) => Some(IntervalNumber.NegInf)
-      case _ => None
+def evaluateOperation(left: IntervalNumber, operator: ArithmeticBinaryOperator, right: IntervalNumber): Option[IntervalNumber] = {
+  (left, operator, right) match {
+    case (IntervalNumber.Integer(leftVal), ArithmeticBinaryOperator.Add, IntervalNumber.Integer(rightVal)) => Some(IntervalNumber.Integer(leftVal + rightVal))
+    case (IntervalNumber.Integer(leftVal), ArithmeticBinaryOperator.Sub, IntervalNumber.Integer(rightVal)) => Some(IntervalNumber.Integer(leftVal - rightVal))
+    case (IntervalNumber.Integer(leftVal), ArithmeticBinaryOperator.Mul, IntervalNumber.Integer(rightVal)) => Some(IntervalNumber.Integer(leftVal * rightVal))
+    case (IntervalNumber.Integer(leftVal), ArithmeticBinaryOperator.Div, IntervalNumber.Integer(rightVal)) => if (rightVal == 0) {
+      None
+    } else {
+      Some(IntervalNumber.Integer(leftVal / rightVal))
     }
+    case (IntervalNumber.PosInf, ArithmeticBinaryOperator.Add | ArithmeticBinaryOperator.Sub, IntervalNumber.Integer(_)) => Some(IntervalNumber.PosInf)
+    case (IntervalNumber.PosInf, ArithmeticBinaryOperator.Mul | ArithmeticBinaryOperator.Div, IntervalNumber.Integer(c)) => if (c > 0) {
+      Some(IntervalNumber.PosInf)
+    } else if (c < 0) {
+      Some(IntervalNumber.NegInf)
+    } else {
+      None
+    }
+    case (IntervalNumber.Integer(_), ArithmeticBinaryOperator.Add, IntervalNumber.PosInf) => Some(IntervalNumber.PosInf)
+    case (IntervalNumber.Integer(_), ArithmeticBinaryOperator.Sub, IntervalNumber.PosInf) => Some(IntervalNumber.NegInf)
+    case (IntervalNumber.Integer(c), ArithmeticBinaryOperator.Mul, IntervalNumber.PosInf) => if (c > 0) {
+      Some(IntervalNumber.PosInf)
+    } else if (c < 0) {
+      Some(IntervalNumber.NegInf)
+    } else {
+      None
+    }
+    case (IntervalNumber.Integer(c), ArithmeticBinaryOperator.Div, IntervalNumber.PosInf) => Some(IntervalNumber.Integer(0))
+    case (IntervalNumber.PosInf, ArithmeticBinaryOperator.Add, IntervalNumber.PosInf) => Some(IntervalNumber.PosInf)
+    case (IntervalNumber.PosInf, ArithmeticBinaryOperator.Sub, IntervalNumber.NegInf) => Some(IntervalNumber.PosInf)
+    case (IntervalNumber.NegInf, ArithmeticBinaryOperator.Add | ArithmeticBinaryOperator.Sub, IntervalNumber.Integer(_)) => Some(IntervalNumber.NegInf)
+    case (IntervalNumber.NegInf, ArithmeticBinaryOperator.Mul | ArithmeticBinaryOperator.Div, IntervalNumber.Integer(c)) => if (c > 0) {
+      Some(IntervalNumber.NegInf)
+    } else if (c < 0) {
+      Some(IntervalNumber.PosInf)
+    } else {
+      None
+    }
+    case (IntervalNumber.Integer(_), ArithmeticBinaryOperator.Add, IntervalNumber.NegInf) => Some(IntervalNumber.NegInf)
+    case (IntervalNumber.Integer(_), ArithmeticBinaryOperator.Sub, IntervalNumber.NegInf) => Some(IntervalNumber.PosInf)
+    case (IntervalNumber.Integer(c), ArithmeticBinaryOperator.Mul, IntervalNumber.NegInf) => if (c > 0) {
+      Some(IntervalNumber.NegInf)
+    } else if (c < 0) {
+      Some(IntervalNumber.PosInf)
+    } else {
+      None
+    }
+    case (IntervalNumber.Integer(c), ArithmeticBinaryOperator.Div, IntervalNumber.NegInf) => Some(IntervalNumber.Integer(0))
+    case (IntervalNumber.NegInf, ArithmeticBinaryOperator.Add, IntervalNumber.NegInf) => Some(IntervalNumber.NegInf)
+    case (IntervalNumber.NegInf, ArithmeticBinaryOperator.Sub, IntervalNumber.PosInf) => Some(IntervalNumber.NegInf)
+    case _ => None
   }
+}
+
+class IntervalAnalysis(cfg: Cfg, maxIteration: Int = 5) extends ForwardMayAnalyzer[IterationAbstractState[IntervalAnalysisAbstractValue]](cfg):
+  override def entryAbstractState(): IterationAbstractState[IntervalAnalysisAbstractValue] = IterationAbstractState(state = AbstractState(cfg.parameters.map { parameter => parameter -> IntervalAnalysisAbstractValue.Unknown }.toMap))
 
   final override def analyseStatement(abstractState: IterationAbstractState[IntervalAnalysisAbstractValue], statement: Statement): IterationAbstractState[IntervalAnalysisAbstractValue] = {
     statement match {
@@ -422,6 +422,24 @@ class IntervalAnalysisInterpreter(cfg: Cfg, intervalAnalysisState: AnalysisState
           case AssignStatement(line, _, ArrayAccess(Variable(a), Variable(i))) =>
             checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
 
+          case AssignStatement(line, _, ArrayAccess(Variable(a), ArithmeticBinaryOperation(left: (Variable | ArithmeticConstant), operator, right: (Variable | ArithmeticConstant)))) =>
+            val leftAbstractValue = left match {
+              case Variable(y) => Try(state(y)).getOrElse(Unknown)
+              case ArithmeticConstant(c) => IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c))
+            }
+            val rightAbstractValue = right match {
+              case Variable(z) => Try(state(z)).getOrElse(Unknown)
+              case ArithmeticConstant(c) => IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c))
+            }
+            (leftAbstractValue, rightAbstractValue) match {
+              case (IntervalAnalysisAbstractValue.Interval(leftFrom, leftTo), IntervalAnalysisAbstractValue.Interval(rightFrom, rightTo)) =>
+                (evaluateOperation(leftFrom, operator, rightFrom), evaluateOperation(leftTo, operator, rightTo)) match {
+                  case (Some(newFrom), Some(newTo)) => checkAccess(abstractState, line, a, IntervalAnalysisAbstractValue.Interval(newFrom, newTo), Try(state(a)).getOrElse(Unknown))
+                  case (_, _) => abstractState
+                }
+              case (_, _) => abstractState
+            }
+
           // Arith Assign
           case AssignStatement(line, _, ArithmeticBinaryOperation(_, _, ArrayAccess(Variable(a), Variable(i)))) =>
             checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
@@ -434,6 +452,31 @@ class IntervalAnalysisInterpreter(cfg: Cfg, intervalAnalysisState: AnalysisState
           case AssignStatement(line, _, BooleanBinaryOperation(ArrayAccess(Variable(a), Variable(i)), _, _)) =>
             checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
 
+          // Array Assign Statement
+          case ArrayAssignStatement(line, a, ArithmeticConstant(c), _) =>
+            checkAccess(abstractState, line, a, IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c)), Try(state(a)).getOrElse(Unknown))
+          case ArrayAssignStatement(line, _, ArrayAccess(Variable(x), Variable(y)), _) =>
+            checkAccess(abstractState, line, x, Try(state(y)).getOrElse(Unknown), Try(state(x)).getOrElse(Unknown))
+          case ArrayAssignStatement(line, _, ArrayAccess(Variable(x), ArithmeticConstant(c)), _) =>
+            checkAccess(abstractState, line, x, IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c)), Try(state(x)).getOrElse(Unknown))
+          case ArrayAssignStatement(line, _, ArrayAccess(Variable(x), ArithmeticBinaryOperation(left: (Variable | ArithmeticConstant), operator, right: (Variable | ArithmeticConstant))), _) =>
+            val leftAbstractValue = left match {
+              case Variable(y) => Try(state(y)).getOrElse(Unknown)
+              case ArithmeticConstant(c) => IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c))
+            }
+            val rightAbstractValue = right match {
+              case Variable(z) => Try(state(z)).getOrElse(Unknown)
+              case ArithmeticConstant(c) => IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c))
+            }
+            (leftAbstractValue, rightAbstractValue) match {
+              case (IntervalAnalysisAbstractValue.Interval(leftFrom, leftTo), IntervalAnalysisAbstractValue.Interval(rightFrom, rightTo)) =>
+                (evaluateOperation(leftFrom, operator, rightFrom), evaluateOperation(leftTo, operator, rightTo)) match {
+                  case (Some(newFrom), Some(newTo)) => checkAccess(abstractState, line, x, IntervalAnalysisAbstractValue.Interval(newFrom, newTo), Try(state(x)).getOrElse(Unknown))
+                  case (_, _) => abstractState
+                }
+              case (_, _) => abstractState
+            }
+
           // Return Statement
           case ReturnStatement(line, ArrayAccess(Variable(a), Variable(i))) =>
             checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
@@ -445,6 +488,23 @@ class IntervalAnalysisInterpreter(cfg: Cfg, intervalAnalysisState: AnalysisState
             checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
           case ReturnStatement(line, BooleanBinaryOperation(ArrayAccess(Variable(a), Variable(i)), _, _)) =>
             checkAccess(abstractState, line, a, Try(state(i)).getOrElse(Unknown), Try(state(a)).getOrElse(Unknown))
+          case ReturnStatement(line, ArrayAccess(Variable(a), ArithmeticBinaryOperation(left: (Variable | ArithmeticConstant), operator, right: (Variable | ArithmeticConstant)))) =>
+            val leftAbstractValue = left match {
+              case Variable(y) => Try(state(y)).getOrElse(Unknown)
+              case ArithmeticConstant(c) => IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c))
+            }
+            val rightAbstractValue = right match {
+              case Variable(z) => Try(state(z)).getOrElse(Unknown)
+              case ArithmeticConstant(c) => IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c))
+            }
+            (leftAbstractValue, rightAbstractValue) match {
+              case (IntervalAnalysisAbstractValue.Interval(leftFrom, leftTo), IntervalAnalysisAbstractValue.Interval(rightFrom, rightTo)) =>
+                (evaluateOperation(leftFrom, operator, rightFrom), evaluateOperation(leftTo, operator, rightTo)) match {
+                  case (Some(newFrom), Some(newTo)) => checkAccess(abstractState, line, a, IntervalAnalysisAbstractValue.Interval(newFrom, newTo), Try(state(a)).getOrElse(Unknown))
+                  case (_, _) => abstractState
+                }
+              case (_, _) => abstractState
+            }
 
           case _ => abstractState
         }
