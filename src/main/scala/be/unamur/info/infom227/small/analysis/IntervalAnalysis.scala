@@ -8,6 +8,8 @@ import be.unamur.info.infom227.small.cfg.{Cfg, ProgramPoint}
 
 import scala.util.{Success, Try}
 
+// TODO: handle function without params, refactor
+
 enum IntervalNumber:
   case NegInf
   case Integer(value: Int)
@@ -89,12 +91,6 @@ object IntervalAnalysisAbstractValue:
     }
   }
 
-/*
-========================
-  FIRST PASS ANALYSIS
-========================
- */
-
 def evaluateOperation(left: IntervalNumber, operator: ArithmeticBinaryOperator, right: IntervalNumber): Option[IntervalNumber] = {
   (left, operator, right) match {
     case (IntervalNumber.Integer(leftVal), ArithmeticBinaryOperator.Add, IntervalNumber.Integer(rightVal)) => Some(IntervalNumber.Integer(leftVal + rightVal))
@@ -149,11 +145,59 @@ def evaluateOperation(left: IntervalNumber, operator: ArithmeticBinaryOperator, 
   }
 }
 
-class IntervalAnalysis(cfg: Cfg, maxIteration: Int = 5) extends ForwardMayAnalyzer[IterationAbstractState[IntervalAnalysisAbstractValue]](cfg):
-  override def entryAbstractState(): IterationAbstractState[IntervalAnalysisAbstractValue] = IterationAbstractState(state = AbstractState(cfg.parameters.map { parameter => parameter -> IntervalAnalysisAbstractValue.Unknown }.toMap))
+/*
+========================
+  INTERPROCEDURAL
+========================
+ */
+type ExtendedIntervalAnalysisAbstractState = ExtendedAbstractState[IntervalAnalysisAbstractValue]
+type ExtendedIntervalAnalysisState = AnalysisState[ExtendedIntervalAnalysisAbstractState]
 
-  final override def analyseStatement(abstractState: IterationAbstractState[IntervalAnalysisAbstractValue], statement: Statement): IterationAbstractState[IntervalAnalysisAbstractValue] = {
+class InterproceduralIntervalAnalysis(name: String, cfgs: Map[String, Cfg], analysisState: InterproceduralIntervalAnalysisState) extends ForwardMayAnalyzer[ExtendedIntervalAnalysisAbstractState](cfgs(name)):
+  override def entryAbstractState(): ExtendedIntervalAnalysisAbstractState = {
+    val arguments = analysisState.functions.get(name).map(function => function.arguments).getOrElse(List[IntervalAnalysisAbstractValue]())
+    ExtendedAbstractState(AbstractState(cfgs(name).parameters.zip(arguments).toMap))
+  }
+
+
+  private def analyseExpression(abstractState: ExtendedIntervalAnalysisAbstractState, expression: Expression): IntervalAnalysisAbstractValue = {
+    expression match {
+      case ArithmeticConstant(c) => IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c))
+      case Variable(y) => abstractState(y)
+      case ArithmeticBinaryOperation(left: (Variable | ArithmeticConstant), operator, right: (Variable | ArithmeticConstant)) =>
+        val leftAbstractValue = left match {
+          case Variable(y) => abstractState(y)
+          case ArithmeticConstant(c) => IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c))
+        }
+        val rightAbstractValue = right match {
+          case Variable(z) => abstractState(z)
+          case ArithmeticConstant(c) => IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c))
+        }
+        (leftAbstractValue, rightAbstractValue) match {
+          case (IntervalAnalysisAbstractValue.Interval(leftFrom, leftTo), IntervalAnalysisAbstractValue.Interval(rightFrom, rightTo)) =>
+            (evaluateOperation(leftFrom, operator, rightFrom), evaluateOperation(leftTo, operator, rightTo)) match {
+              case (Some(newFrom), Some(newTo)) => IntervalAnalysisAbstractValue.Interval(newFrom, newTo)
+              case (_, _) => IntervalAnalysisAbstractValue.Unknown
+            }
+          case (_, _) => IntervalAnalysisAbstractValue.Unknown
+        }
+      case _ =>
+        IntervalAnalysisAbstractValue.Unknown
+    }
+  }
+
+  final override def analyseStatement(abstractState: ExtendedIntervalAnalysisAbstractState, statement: Statement): ExtendedIntervalAnalysisAbstractState = {
     statement match {
+      case AssignStatement(lineNumber, variable, expression: FunctionCall) =>
+        abstractState.addCall(expression.name, expression.arguments.map {
+          case Variable(y) => abstractState(y)
+          case ArithmeticConstant(c) => IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c))
+          case _ => IntervalAnalysisAbstractValue.Unknown
+        })(variable -> (analysisState.functions.get(expression.name) match {
+          case Some(function) => function.returnValue.getOrElse(IntervalAnalysisAbstractValue.Bottom)
+          case None => IntervalAnalysisAbstractValue.Bottom
+        }))
+
       case AssignStatement(lineNumber, variable, expression) =>
         expression match {
           case ArithmeticConstant(c) => abstractState(variable -> IntervalAnalysisAbstractValue.Interval(IntervalNumber.Integer(c), IntervalNumber.Integer(c)))
@@ -180,12 +224,18 @@ class IntervalAnalysis(cfg: Cfg, maxIteration: Int = 5) extends ForwardMayAnalyz
           case _ =>
             abstractState(variable -> IntervalAnalysisAbstractValue.Unknown)
         }
+
+      case ReturnStatement(lineNumber, ArithmeticConstant(c)) =>
+        abstractState.withReturnValue(IntervalAnalysisAbstractValue.constant(IntervalNumber.Integer(c)))
+      case ReturnStatement(lineNumber, Variable(y)) =>
+        abstractState.withReturnValue(abstractState(y))
+
       case _ =>
         abstractState
     }
   }
 
-  final override def conditionUpdate(abstractState: IterationAbstractState[IntervalAnalysisAbstractValue], condition: BooleanExpression): Option[IterationAbstractState[IntervalAnalysisAbstractValue]] = {
+  final override def conditionUpdate(abstractState: ExtendedIntervalAnalysisAbstractState, condition: BooleanExpression): Option[ExtendedIntervalAnalysisAbstractState] = {
     condition match {
       case BooleanConstant(true) =>
         Some(abstractState)
@@ -341,40 +391,66 @@ class IntervalAnalysis(cfg: Cfg, maxIteration: Int = 5) extends ForwardMayAnalyz
     }
   }
 
-  override def merge(analysisState: AnalysisState[IterationAbstractState[IntervalAnalysisAbstractValue]], node: ProgramPoint, left: IterationAbstractState[IntervalAnalysisAbstractValue], right: IterationAbstractState[IntervalAnalysisAbstractValue]): Try[IterationAbstractState[IntervalAnalysisAbstractValue]] = {
-    var tryWiden = false
+type InterproceduralIntervalAnalysisObserver = AnalysisObserver[ProgramPoint, ExtendedIntervalAnalysisAbstractState, ExtendedIntervalAnalysisState]
+type InterproceduralIntervalAnalysisAbstractState[O] = InterproceduralAbstractState[ExtendedIntervalAnalysisAbstractState, O]
+type InterproceduralIntervalAnalysisState = InterproceduralAnalysisState[IntervalAnalysisAbstractValue]
 
-    val joined = left.joinWith(
-      right,
-      (leftValue, rightValue, iterations) => {
-        (leftValue, rightValue) match {
-          case (
-            IntervalAnalysisAbstractValue.Interval(IntervalNumber.Integer(a), IntervalNumber.Integer(b)),
-            IntervalAnalysisAbstractValue.Interval(IntervalNumber.Integer(c), IntervalNumber.Integer(d))
-          ) =>
-            if (iterations.getOrElse(node, 0) > maxIteration) {
-              IntervalAnalysisAbstractValue.interval(
-                if (a <= c) IntervalNumber.Integer(a) else IntervalNumber.NegInf,
-                if (b >= d) IntervalNumber.Integer(b) else IntervalNumber.PosInf
-              )
-            } else {
-              tryWiden = true
-              leftValue.join(rightValue)
-            }
-          case (_, _) => leftValue.join(rightValue)
-        }
-      }
-    )
+class InterproceduralIntervalCallGraphAnalysis[O <: InterproceduralIntervalAnalysisObserver](val cfgs: Map[String, Cfg], val observerFactory: (name: String, cfg: Cfg) => Try[O]) extends CallGraphAnalyser[String, List[IntervalAnalysisAbstractValue], Option[IntervalAnalysisAbstractValue], InterproceduralIntervalAnalysisAbstractState[O], InterproceduralIntervalAnalysisState]:
+  override def entryNodes: Set[String] = Set("main")
 
-    Success(
-      if (tryWiden) {
-        joined.increased(node)
-      } else {
-        joined
-      }
-    )
+  override def calleeNodes(analysisState: InterproceduralIntervalAnalysisState, node: String): Try[Set[String]] = {
+    Success(analysisState.functions(node).callees)
   }
 
+  override def callerNodes(analysisState: InterproceduralIntervalAnalysisState, node: String): Try[Set[String]] = {
+    Success(analysisState.functions.foldLeft(Set.empty[String]) {
+      case (acc, (caller, functionState)) => if (functionState.callees.contains(node)) acc + caller else acc
+    })
+  }
+
+  override def initialiseAnalysisState(): Try[InterproceduralIntervalAnalysisState] = {
+    Success(InterproceduralAnalysisState(
+      cfgs.map((name, cfg) => name -> FunctionState(arguments = cfg.parameters.map(_ => IntervalAnalysisAbstractValue.Bottom)))
+    ))
+  }
+
+  override def analyseNode(analysisState: InterproceduralIntervalAnalysisState, node: String): Try[InterproceduralIntervalAnalysisAbstractState[O]] = {
+    for {
+      observer <- observerFactory(node, cfgs(node))
+      intervalAnalysisState <- analysis(InterproceduralIntervalAnalysis(node, cfgs, analysisState), observer)
+    } yield InterproceduralAbstractState(node, intervalAnalysisState.abstractStates(ProgramPoint.ExitPoint), observer)
+  }
+
+  override def merge(analysisState: InterproceduralIntervalAnalysisState, abstractState: InterproceduralIntervalAnalysisAbstractState[O]): Try[InterproceduralIntervalAnalysisState] = {
+    val intervalAbstractState = abstractState.abstractState
+    val previousFunctionState = analysisState.functions(abstractState.name)
+    val functionState = previousFunctionState.join(FunctionState(
+      intervalAbstractState.state,
+      previousFunctionState.arguments,
+      intervalAbstractState.returnValue,
+      intervalAbstractState.calls.keys.toSet
+    ))
+    val functions = analysisState.functions + (abstractState.name -> functionState)
+    Success(InterproceduralAnalysisState(functions.map((name, functionState) => {
+      intervalAbstractState.calls.get(name) match {
+        case Some(arguments) => name -> FunctionState(
+          functionState.abstractState,
+          joinList(functionState.arguments, arguments),
+          functionState.returnValue,
+          functionState.callees
+        )
+        case None => name -> functionState
+      }
+    })))
+  }
+
+  override def getArguments(analysisState: InterproceduralIntervalAnalysisState, node: String): Try[List[IntervalAnalysisAbstractValue]] = {
+    Success(analysisState.functions(node).arguments)
+  }
+
+  override def getReturnValue(analysisState: InterproceduralIntervalAnalysisState, node: String): Try[Option[IntervalAnalysisAbstractValue]] = {
+    Success(analysisState.functions(node).returnValue)
+  }
 
 /*
 ========================
@@ -399,7 +475,7 @@ case class IntervalInterpreterAbstractState(diagnostics: Set[(DiagnosticType, St
     IntervalInterpreterAbstractState(diagnostics.intersect(other.diagnostics))
   }
 
-class IntervalAnalysisInterpreter(cfg: Cfg, intervalAnalysisState: AnalysisState[IterationAbstractState[IntervalAnalysisAbstractValue]]) extends ForwardMayAnalyzer[IntervalInterpreterAbstractState](cfg):
+class IntervalAnalysisInterpreter(cfg: Cfg, stateAt: ProgramPoint => Option[String => IntervalAnalysisAbstractValue]) extends ForwardMayAnalyzer[IntervalInterpreterAbstractState](cfg):
   override def entryAbstractState(): IntervalInterpreterAbstractState = IntervalInterpreterAbstractState()
 
   private def checkAccess(acc: IntervalInterpreterAbstractState, line: Int, array: String, index: IntervalAnalysisAbstractValue, size: IntervalAnalysisAbstractValue): IntervalInterpreterAbstractState = {
@@ -415,7 +491,7 @@ class IntervalAnalysisInterpreter(cfg: Cfg, intervalAnalysisState: AnalysisState
   }
 
   override def analyseStatement(abstractState: IntervalInterpreterAbstractState, statement: Statement): IntervalInterpreterAbstractState = {
-    intervalAnalysisState.abstractStates.get(ProgramPoint.StatementPoint(statement)) match {
+    stateAt(ProgramPoint.StatementPoint(statement)) match {
       case Some(state) =>
         statement match {
           // Assign Statement

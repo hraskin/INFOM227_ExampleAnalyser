@@ -197,40 +197,63 @@ def handleExit[T](tryResult: Try[T], f: T => Unit): Unit = {
           }
         }
       )
-    case "interval-analysis" =>
+    case "interprocedural-interval-analysis" =>
       val tryResult = for {
         program <- buildAstFromFileName(file)
         cfgs = cfg.build(program)
-        intervalAnalyses <- cfgsAnalysis(
+        interproceduralObserver = InterproceduralTableObserver[IntervalAnalysisAbstractValue, TableObserver[IntervalAnalysisAbstractValue, ExtendedIntervalAnalysisAbstractState], InterproceduralAbstractState[ExtendedIntervalAnalysisAbstractState, TableObserver[IntervalAnalysisAbstractValue, ExtendedIntervalAnalysisAbstractState]]]()
+        intervalAnalyses <- interproceduralAnalysis(
+          InterproceduralIntervalCallGraphAnalysis(
+            cfgs,
+            (_, _) => Success(TableObserver(table = Table(bottomSymbol = IntervalAnalysisAbstractValue.Bottom.toString)))
+          ),
+          interproceduralObserver
+        )
+        finalAnalyses <- cfgsAnalysis(
           cfgs,
-          (_, cfg) => Success(IntervalAnalysis(cfg)),
-          (name, _) => Success(TableObserver(table = Table(bottomSymbol = IntervalAnalysisAbstractValue.Bottom.toString)))
+          (name, _) => Success(InterproceduralIntervalAnalysis(name, cfgs, intervalAnalyses)),
+          (_, _) => Success(TableObserver(table = Table(bottomSymbol = IntervalAnalysisAbstractValue.Bottom.toString)))
         )
         moduleDiagnostics <- cfgsAnalysis(
           cfgs,
-          (name, cfg) => {
-            intervalAnalyses.get(name) match {
-              case Some((intervalAnalysis, _)) => Success(IntervalAnalysisInterpreter(cfg, intervalAnalysis))
-              case None => Failure(new Exception(s"Array access analysis not found for $name"))
-            }
+          (name, cfg) => finalAnalyses.get(name) match {
+            case Some((intervalAnalysis, _)) =>
+              Success(IntervalAnalysisInterpreter(cfg, point => intervalAnalysis.abstractStates.get(point).map(s => (v: String) => s(v))))
+            case None => Failure(new Exception(s"Interval analysis not found for $name"))
           },
           (_, _) => Success(DummyObserver())
         )
-      } yield (intervalAnalyses, moduleDiagnostics)
+      } yield (intervalAnalyses, interproceduralObserver, moduleDiagnostics)
 
       handleExit(
         tryResult,
-        (intervalAnalyses, moduleDiagnostics) => {
-          printTitle("Interval Analysis")
-          printAnalysis(intervalAnalyses, others.contains("-v"),
-            name => {
-              moduleDiagnostics.get(name).foreach((diagnostics, _) => {
-                for ((diagnosticType, message) <-
-                       diagnostics.abstractStates(ProgramPoint.ExitPoint).diagnostics) {
-                  println(s"  [$diagnosticType] $message\n")
-                }
-              })
-            })
+        { case (intervalAnalyses, interproceduralObserver, moduleDiagnostics) =>
+          printTitle("Interprocedural Interval Analysis")
+          for ((name, observer, analysisState, worklist) <- interproceduralObserver.trace) {
+            println(s"Analysis for $name:")
+            if (others.contains("-v")) {
+              print(observer.table.toString)
+              for ((name, functionState) <- analysisState.functions) {
+                println(s"> function $name(${functionState.arguments.map(_.toString).mkString(", ")}) -> ${functionState.returnValue}")
+                println(s"      Callees: {${functionState.callees.map(_.toString).mkString(", ")}}")
+              }
+              println(s"> Worklist: {${worklist.mkString(", ")}}")
+            }
+          }
+          println("Signatures:")
+          for ((name, functionState) <- intervalAnalyses.functions) {
+            println(s"    ${name}(${functionState.arguments.map(_.toString).mkString(", ")}) -> ${functionState.returnValue}")
+          }
+
+          println("Diagnostics:")
+          for ((name, (analysisState, _)) <- moduleDiagnostics) {
+            println(s"  $name:")
+            analysisState.abstractStates.get(ProgramPoint.ExitPoint).foreach { s =>
+              s.diagnostics.toList.sortBy(_._2).foreach { case (diagnosticType, message) =>
+                println(s"    $diagnosticType: $message")
+              }
+            }
+          }
         }
       )
     case action =>
